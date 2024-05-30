@@ -1,0 +1,54 @@
+pipeline {
+    agent any
+    environment {
+        // Use the root AWS credentials
+        AWS_CREDENTIALS = credentials('aws-credentials-id')
+        GITHUB_CREDENTIALS = credentials('github-token')
+        S3_BUCKET = 'ourprojectbucket4'
+        REGION = 'us-east-1'
+    }
+    stages {
+        stage('Checkout') {
+            steps {
+                git url: 'https://github.com/mamta-nagar/Final_Year_JavaCode.git', branch: 'master', credentialsId: 'github-token'
+            }
+        }
+        stage('Build') {
+            steps {
+                sh 'mvn clean install'
+            }
+        }
+        stage('Test') {
+            steps {
+                sh 'mvn test'
+            }
+        }
+        stage('Deploy') {
+            steps {
+                withAWS(credentials: "${AWS_CREDENTIALS}", region: "${REGION}") {
+                    s3Upload(bucket: "${S3_BUCKET}", file: 'target/myapp.jar')
+                }
+            }
+        }
+        stage('Archive Artifacts') {
+            steps {
+                archiveArtifacts artifacts: 'target/*.jar, target/*.log', allowEmptyArchive: true
+                withAWS(credentials: "${AWS_CREDENTIALS}", region: "${REGION}") {
+                    s3Upload(bucket: "${S3_BUCKET}", path: "builds/${env.BUILD_NUMBER}/", includePathPattern: 'target/*.jar')
+                }
+            }
+        }
+    }
+    post {
+        success {
+            mail to: 'dearwork00@gmail.com',
+                 subject: "SUCCESS: Job '${env.JOB_NAME} [${env.BUILD_NUMBER}]'",
+                 body: "Great news! The job '${env.JOB_NAME} [${env.BUILD_NUMBER}]' succeeded."
+        }
+        failure {
+            mail to: 'dearwork00@gmail.com',
+                 subject: "FAILURE: Job '${env.JOB_NAME} [${env.BUILD_NUMBER}]'",
+                 body: "Unfortunately, the job '${env.JOB_NAME} [${env.BUILD_NUMBER}]' failed."
+        }
+    }
+}
