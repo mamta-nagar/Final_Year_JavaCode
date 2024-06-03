@@ -1,9 +1,6 @@
 pipeline {
     agent any
     environment {
-        // Use the root AWS credentials
-        AWS_CREDENTIALS = credentials('aws-credentials-id')
-        GITHUB_CREDENTIALS = credentials('github-token')
         S3_BUCKET = 'ourprojectbucket4'
         REGION = 'us-east-1'
     }
@@ -14,41 +11,37 @@ pipeline {
             }
         }
         stage('Build') {
+            tools {
+                maven 'jenkins-maven' // Adjust the Maven version as needed
+            }
             steps {
                 sh 'mvn clean install'
             }
         }
         stage('Test') {
+            tools {
+                maven 'jenkins-maven' // Adjust the Maven version as needed
+            }
             steps {
                 sh 'mvn test'
             }
         }
         stage('Deploy') {
             steps {
-                withAWS(credentials: "${AWS_CREDENTIALS}", region: "${REGION}") {
-                    s3Upload(bucket: "${S3_BUCKET}", file: 'target/myapp.jar')
-                }
-            }
-        }
-        stage('Archive Artifacts') {
-            steps {
-                archiveArtifacts artifacts: 'target/*.jar, target/*.log', allowEmptyArchive: true
-                withAWS(credentials: "${AWS_CREDENTIALS}", region: "${REGION}") {
-                    s3Upload(bucket: "${S3_BUCKET}", path: "builds/${env.BUILD_NUMBER}/", includePathPattern: 'target/*.jar')
+                withCredentials([[$class: 'AmazonWebServicesCredentialsBinding', credentialsId: 'aws-credentials-id']]) {
+                    sh '''
+                        aws s3 cp target/my-app-1.0-SNAPSHOT.jar s3://$S3_BUCKET/builds/$BUILD_NUMBER/my-app-1.0-SNAPSHOT.jar --region $REGION
+                    '''
                 }
             }
         }
     }
     post {
-        success {
+        always {
+            archiveArtifacts artifacts: 'target/*.jar', allowEmptyArchive: true
             mail to: 'dearwork00@gmail.com',
-                 subject: "SUCCESS: Job '${env.JOB_NAME} [${env.BUILD_NUMBER}]'",
-                 body: "Great news! The job '${env.JOB_NAME} [${env.BUILD_NUMBER}]' succeeded."
-        }
-        failure {
-            mail to: 'dearwork00@gmail.com',
-                 subject: "FAILURE: Job '${env.JOB_NAME} [${env.BUILD_NUMBER}]'",
-                 body: "Unfortunately, the job '${env.JOB_NAME} [${env.BUILD_NUMBER}]' failed."
+                 subject: "Build ${currentBuild.fullDisplayName}",
+                 body: "Build ${currentBuild.fullDisplayName} completed with status: ${currentBuild.result}"
         }
     }
 }
